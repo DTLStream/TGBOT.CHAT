@@ -74,6 +74,14 @@ updater.dispatcher.add_handler(
     )
 )
 updater.dispatcher.add_handler(
+    te.MessageHandler(
+        te.Filters.chat(botconfig['masterchatid']) & \
+        te.Filters.user(botconfig['masterid']) & \
+        te.Filters.regex(r'/d(elete *)'),
+        deleteHandler
+    )
+)
+updater.dispatcher.add_handler(
     te.CallbackQueryHandler(
         switchCallbackHandler
     )

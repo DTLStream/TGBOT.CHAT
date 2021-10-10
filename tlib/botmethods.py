@@ -78,6 +78,79 @@ def userinfoHandler(update: t.Update, context: te.CallbackContext):
         errmsg = str(e)
         update.effective_chat.send_message(errmsg+'[userinfoHandler]')
 
+
+# deleteHandler for master
+# check MESSAGE_MAP for s_msg, remove relevant message from db
+def deleteHandler(update:t.Update, context:te.CallbackContext):
+    Session = dbconfig['session']
+    session = Session()
+    message = update.effective_message
+    chat = update.effective_chat
+    if not message.reply_to_message:
+        botwarn('{}'.format('usage: /d [ reply the message to be deleted ]'),context.bot)
+        return
+    target_message = message.reply_to_message
+    with session.begin() as sess:
+        MESSAGE2 = orm.aliased(MESSAGE)
+        dbmsgtup = sess.query(MESSAGE,MESSAGE2).\
+            join(
+                MESSAGE_MAP,
+                sql.and_(
+                    MESSAGE_MAP.m_ch_id==MESSAGE.ch_id,
+                    MESSAGE_MAP.m_msg_id==MESSAGE.msg_id,
+                )
+            ).\
+            join(
+                MESSAGE2,
+                sql.and_(
+                    MESSAGE_MAP.s_ch_id==MESSAGE2.ch_id,
+                    MESSAGE_MAP.s_msg_id==MESSAGE2.msg_id,
+                )
+            ).\
+            filter(MESSAGE.ch_id==chat.id).\
+            filter(MESSAGE.msg_id==target_message.message_id).first()
+        if not dbmsgtup:
+            botwarn('{}'.format('target message not found in map, failed to delete'),context.bot)
+            return
+        # get mapped messages
+        msg, slvmsg = dbmsgtup
+        # save msg/slvmsg (only one copy of message is required, since the other one is almost the same)
+        # save msg
+        dbmsgbucket = OLD_MESSAGE_BUCKET(
+            ch_id=msg.ch_id,
+            msg_id=msg.msg_id,
+            content=msg.content,
+            compressed=msg.compressed,
+            timestamp=msg.timestamp
+        )
+        sess.add(dbmsgbucket)
+
+        # delete messages
+        # master
+        ret = context.bot.delete_message(
+            chat_id=msg.ch_id,
+            message_id=msg.msg_id
+        )
+        # if not ret: botwarn('master message not deleted',context.bot)
+        # slave
+        ret = context.bot.delete_message(
+            chat_id=slvmsg.ch_id,
+            message_id=slvmsg.msg_id
+        )
+        # only slave message cannot be observed directly
+        if not ret: botwarn('slave message not deleted',context.bot)
+        # command
+        ret = context.bot.delete_message(
+            chat_id=chat.id,
+            message_id=message.message_id
+        )
+        # if not ret: botwarn('/d command not deleted',context.bot)
+        
+        # remove msg,slvmsg in db
+        sess.delete(msg)
+        sess.delete(slvmsg)
+
+
 # forward based on different message types, from others to master
 # handle MESSAGE_MAP
 # message: from others, mastermsg: to masterchat
