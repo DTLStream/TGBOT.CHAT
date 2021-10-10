@@ -13,6 +13,8 @@ class BOTSTATE(BASE):
     __tablename__ = 'BOTSTATE'
     s_k = sql.Column('s_k',sql.String(255),primary_key=True)
     s_v = sql.Column('s_v',sql.String(255),nullable=False)
+    def __repr__(self):
+        return 'BOTSTATE s_k->s_v: ({})->({})'.format(self.s_k,self.s_v)
 
 class CHTYPE(enum.Enum):
     private = 0
@@ -27,6 +29,9 @@ class CHAT(BASE):
     ch_id = sql.Column('ch_id',sql.BigInteger)
     ch_name = sql.Column('ch_name',sql.String(255))
     ch_type = sql.Column('ch_type',sql.Enum(CHTYPE))
+    def __repr__(self):
+        return 'CHAT ch_id:{}, ch_name:{}, ch_type:{}'.\
+            format(self.ch_id,self.ch_name,self.ch_type)
 
 class MESSAGE(BASE):
     __tablename__ = 'MESSAGE'
@@ -57,15 +62,16 @@ class MESSAGE_MAP(BASE):
     direction = sql.Column('direction',sql.Enum(MSGDIR),nullable=False)
     timestamp = sql.Column('timestamp',sql.BigInteger)
 
-class MESSAGE_HISTORY(BASE):
-    __tablename__ = 'MESSAGE_HISTORY'
-    __table_args__ = (
-        sql.PrimaryKeyConstraint('ch_id','msg_id',name='mh_pk'),
-        sql.ForeignKeyConstraint(['ch_id','msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'])
-    )
-    ch_id = sql.Column('ch_id',sql.BigInteger)
-    msg_id = sql.Column('msg_id',sql.BigInteger)
-    timestamp = sql.Column('timestamp',sql.BigInteger)
+# unnecessary
+# class MESSAGE_HISTORY(BASE):
+#     __tablename__ = 'MESSAGE_HISTORY'
+#     __table_args__ = (
+#         sql.PrimaryKeyConstraint('ch_id','msg_id',name='mh_pk'),
+#         sql.ForeignKeyConstraint(['ch_id','msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'])
+#     )
+#     ch_id = sql.Column('ch_id',sql.BigInteger)
+#     msg_id = sql.Column('msg_id',sql.BigInteger)
+#     timestamp = sql.Column('timestamp',sql.BigInteger)
 
 class MESSAGE_QUEUE(BASE):
     __tablename__ = 'MESSAGE_QUEUE'
@@ -109,9 +115,10 @@ def initdb(dbconf):
     if not inspector.has_table('MESSAGE_MAP'):
         logger.info('MESSAGE_MAP table not exists')
         all_tables_created = False
-    if not inspector.has_table('MESSAGE_HISTORY'):
-        logger.info('MESSAGE_HISTORY table not exists')
-        all_tables_created = False
+    # unnecessary
+    # if not inspector.has_table('MESSAGE_HISTORY'):
+    #     logger.info('MESSAGE_HISTORY table not exists')
+    #     all_tables_created = False
     if not inspector.has_table('MESSAGE_QUEUE'):
         logger.info('MESSAGE_QUEUE table not exists')
         all_tables_created = False
