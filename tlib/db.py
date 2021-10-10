@@ -52,8 +52,10 @@ class MESSAGE_MAP(BASE):
     __tablename__ = 'MESSAGE_MAP'
     __table_args__ = (
         sql.PrimaryKeyConstraint('m_ch_id','m_msg_id','s_ch_id','s_msg_id',name='mm_pk'),
-        sql.ForeignKeyConstraint(['m_ch_id','m_msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'],),
-        sql.ForeignKeyConstraint(['s_ch_id','s_msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'])
+        sql.ForeignKeyConstraint(['m_ch_id','m_msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'],\
+            ondelete='cascade'),
+        sql.ForeignKeyConstraint(['s_ch_id','s_msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'],\
+            ondelete='cascade')
     )
     m_ch_id = sql.Column('m_ch_id',sql.BigInteger)
     m_msg_id = sql.Column('m_msg_id',sql.BigInteger)
@@ -77,10 +79,20 @@ class MESSAGE_QUEUE(BASE):
     __tablename__ = 'MESSAGE_QUEUE'
     __table_args__ = (
         sql.PrimaryKeyConstraint('ch_id','msg_id',name='mq_pk'),
-        sql.ForeignKeyConstraint(['ch_id','msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'])
+        sql.ForeignKeyConstraint(['ch_id','msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'],\
+            ondelete='cascade')
     )
     ch_id = sql.Column('ch_id',sql.BigInteger)
     msg_id = sql.Column('msg_id',sql.BigInteger)
+    timestamp = sql.Column('timestamp',sql.BigInteger)
+
+class OLD_MESSAGE_BUCKET(BASE):
+    __tablename__ = 'OLD_MESSAGE_BUCKET'
+    entity_id = sql.Column('entity_id',sql.BigInteger, primary_key=True, autoincrement=True)
+    ch_id = sql.Column('ch_id',sql.BigInteger)
+    msg_id = sql.Column('msg_id',sql.BigInteger)
+    content = sql.Column('content',sql.LargeBinary)
+    compressed = sql.Column('compressed',sql.Boolean)
     timestamp = sql.Column('timestamp',sql.BigInteger)
 
 def initdb(dbconf):
@@ -121,6 +133,9 @@ def initdb(dbconf):
     #     all_tables_created = False
     if not inspector.has_table('MESSAGE_QUEUE'):
         logger.info('MESSAGE_QUEUE table not exists')
+        all_tables_created = False
+    if not inspector.has_table('OLD_MESSAGE_BUCKET'):
+        logger.info('OLD_MESSAGE_BUCKET table not exists')
         all_tables_created = False
     if not all_tables_created:
         BASE.metadata.create_all(e)

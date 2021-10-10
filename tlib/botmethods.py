@@ -198,69 +198,77 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
                 botconfig['masterchatid'],
                 text=msg
             )
-        # [TODO] check pinned message and reply to it
+        # [x] check pinned message and reply to it
         elif message.pinned_message:
             logger.debug('processing message type pinned_message')
-            msg = 'pinned message' # [TODO] reply to a message in DB
+            dbpinmsgmap = session.query(MESSAGE_MAP).\
+                filter_by(m_ch_id=botconfig['masterchatid']).\
+                filter_by(s_ch_id=chat.id).\
+                filter_by(s_msg_id=message.pinned_message.message_id).first()
+            pinmsgmapid = dbpinmsgmap.m_msg_id if dbpinmsgmap else None
+            msg = 'pinned message' # [x] reply to a message in DB
             mastermsg = bot.send_message(
                 botconfig['masterchatid'],
-                text=msg
+                text=msg,
+                reply_to_message_id=pinmsgmapid,
+                allow_sending_without_reply=True
             )
         # ordinary message
         else:
             logger.debug('processing ordinary message')
             mastermsg = message.forward(botconfig['masterchatid'])
-            # insert message in MESSAGE/MESSAGE_MAP immediately in case reply_to_message throws
-            if mastermsg:
-                with Session.begin() as sess:
-                    cont, cp = msgcompress(mastermsg)
-                    # MESSAGE
-                    dbmastermsg = MESSAGE(
-                        msg_id=mastermsg.message_id,
-                        ch_id=botconfig['masterchatid'],
-                        content=cont,
-                        compressed=cp,
-                        timestamp=time()
-                    )
-                    sess.add(dbmastermsg)
-                    # MESSAGE_MAP
-                    dbmsgmap = MESSAGE_MAP(
-                        m_ch_id=botconfig['masterchatid'],
-                        m_msg_id = mastermsg.message_id,
-                        s_ch_id = chat.id,
-                        s_msg_id = message.message_id,
-                        direction = MSGDIR.s2m,
-                        timestamp = time()
-                    )
-                    sess.add(dbmsgmap)
-            else:
-                botwarn('forward failed, mastermsg is None', bot)
-                logger.info('mastermsg: {} forwardRoute'.format(mastermsg))
-                return
             
-            # hint reply_to if reply_message exists
-            if message.reply_to_message:
-                # directly lookup map table to find originally sent message
-                dbmap = session.query(MESSAGE_MAP).filter_by(s_ch_id=chat.id).\
-                    filter_by(s_msg_id=message.reply_to_message.message_id).\
-                        filter_by(m_ch_id=botconfig['masterchatid']).first()
-                if dbmap: # found the reply_to message
-                        # do not add to MESSAGE, since this is only a service msg
-                        # [TODO] add debug
-                    bot.send_message(
-                        botconfig['masterchatid'], # guarantee to be m_ch_id
-                        text='reply',
-                        reply_to_message_id=dbmap.m_msg_id,
-                        # such service messages must be replies, else throw error, won't cause damage
-                        allow_sending_without_reply=False
-                    )
-                # the message replied to which is not found in db should be warned
-                else:
-                    botwarn(
-                        'reply_to message not found\n{}'.\
-                            format(message.reply_to_message.message_id),
-                        bot
-                    )
+        # insert message in MESSAGE/MESSAGE_MAP immediately in case reply_to_message throws
+        if mastermsg: # mastermsg successfully sent
+            with Session.begin() as sess:
+                cont, cp = msgcompress(mastermsg)
+                # MESSAGE
+                dbmastermsg = MESSAGE(
+                    msg_id=mastermsg.message_id,
+                    ch_id=botconfig['masterchatid'],
+                    content=cont,
+                    compressed=cp,
+                    timestamp=time()
+                )
+                sess.add(dbmastermsg)
+                # MESSAGE_MAP
+                dbmsgmap = MESSAGE_MAP(
+                    m_ch_id=botconfig['masterchatid'],
+                    m_msg_id = mastermsg.message_id,
+                    s_ch_id = chat.id,
+                    s_msg_id = message.message_id,
+                    direction = MSGDIR.s2m,
+                    timestamp = time()
+                )
+                sess.add(dbmsgmap)
+        else:
+            botwarn('forward failed, check mastermsg', bot)
+            logger.info('mastermsg: {} forwardRoute'.format(mastermsg))
+            return
+        
+        # hint reply_to if reply_message exists
+        if message.reply_to_message:
+            # directly lookup map table to find originally sent message
+            dbmap = session.query(MESSAGE_MAP).filter_by(s_ch_id=chat.id).\
+                filter_by(s_msg_id=message.reply_to_message.message_id).\
+                    filter_by(m_ch_id=botconfig['masterchatid']).first()
+            if dbmap: # found the reply_to message
+                    # do not add to MESSAGE, since this is only a service msg
+                    # [x] add debug
+                bot.send_message(
+                    botconfig['masterchatid'], # guarantee to be m_ch_id
+                    text='reply',
+                    reply_to_message_id=dbmap.m_msg_id,
+                    # such service messages must be replies, else throw error, won't cause damage
+                    allow_sending_without_reply=False
+                )
+            # the message replied to which is not found in db should be warned
+            else:
+                botwarn(
+                    'reply_to message not found\n{}'.\
+                        format(message.reply_to_message.message_id),
+                    bot
+                )
     # exception for any error if occured
     except Exception as e:
         # exception may be other problems including network ones,
@@ -269,7 +277,7 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
         logger.warn('{} forwardRoute'.format(e))
 
 
-# receive message from others [TODO] quote/reply_to/switch
+# receive message from others [x] quote/reply_to/switch
 # 1: currentchat check
 # 2.1[match]: save DB and forward
 # 2.2[not match]: save DB
@@ -297,8 +305,22 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
             return
     # save message to DB
     try:
-        # [TODO] edited message has same id, which should be updated in db but not inserted
+        # [x] edited message has same id, which should be updated in db
         with Session.begin() as sess:
+            # check if new message is an edited message
+            dbmsg = sess.query(MESSAGE).\
+                filter_by(ch_id=chat.id).filter_by(msg_id=message.message_id).first()
+            if dbmsg: # edited
+                # save in bucket, delete map in DB, delete message in DB (ondelete=cascade)
+                dbbucketmsg = OLD_MESSAGE_BUCKET(
+                    ch_id=dbmsg.ch_id,
+                    msg_id=dbmsg.msg_id,
+                    content=dbmsg.content,
+                    compressed=dbmsg.compressed,
+                    timestamp=dbmsg.timestamp
+                )
+                sess.add(dbbucketmsg)
+                sess.delete(dbmsg)
             # insert message into db
             cont, cp = msgcompress(message)
             dbmsg = MESSAGE(
@@ -322,7 +344,6 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
         forwardRoute(message,chat,context.bot)
     # else: save in MESSAGE_QUEUE
     else:
-        # [TODO] msgqueue should handle edited messages
         msgqueue(message,chat,context.bot)
 
 
@@ -335,18 +356,35 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
     session = Session()
     chat = update.effective_chat
     message = update.effective_message
-    # # [TODO] ERROR if called /sw before any message
-    # check 
-    # check currentchat in db
+    # # [x] ERROR if called /sw before any message
+    # check currentchat
+    dbotstate = session.query(BOTSTATE).filter_by(s_k='currentchat').first()
+    currentchat = int(dbotstate.s_v) if dbotstate else None
+    if not currentchat:
+        botwarn('no chat selected, try /sw',context.bot)
+        logger.info('{} receiveMasterHandler'.format('no chat selected, try /sw'))
+        return
+    # check masterchat CHAT, if not exist, warn user to call /sw
+    masterchat_in_db = (session.query(CHAT).filter_by(ch_id=botconfig['masterchatid']).count()==1)
+    if not masterchat_in_db:
+        botwarn('{} receiveMasterHandler'.format('master chat not in db, try /sw'))
+        logger.info('{} receiveMasterHandler'.format('master chat not in db, try /sw'))
+        return
+    # begin saving message, checking currentchat, ...
     with Session.begin() as sess:
-        dbq = sess.query(CHAT).filter_by(ch_id=botconfig['masterchatid'])
-        if dbq.count()==0:
-            dbmasterchat = CHAT(
-                ch_id=botconfig['masterchatid'],
-                ch_name=chat.full_name,
-                ch_type=chatype(chat)
+        # [x] check if the message is an edited one first
+        dbmsg = sess.query(MESSAGE).filter_by(ch_id=chat.id).\
+            filter_by(msg_id=message.message_id).first()
+        if dbmsg: # edited
+            dbbucketmsg = OLD_MESSAGE_BUCKET(
+                ch_id=dbmsg.ch_id,
+                msg_id=dbmsg.msg_id,
+                content=dbmsg.content,
+                compressed=dbmsg.compressed,
+                timestamp=dbmsg.timestamp
             )
-            sess.add(dbmasterchat)
+            sess.add(dbbucketmsg)
+            sess.delete(dbmsg)
         # save message
         msg, cp = msgcompress(message)
         dbmsg = MESSAGE(
@@ -357,75 +395,70 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
             timestamp=time()
         )
         sess.add(dbmsg)
-        dbq = sess.query(BOTSTATE).filter_by(s_k='currentchat')
-        dbotstate = dbq.first()
-        currentchat = int(dbotstate.s_v) if dbotstate else None
-    if not currentchat:
-        botwarn('no chat selected',context.bot)
+        
+    if (message.invoice or
+        message.new_chat_members or
+        message.left_chat_member or
+        message.new_chat_title or
+        message.new_chat_photo or
+        message.delete_chat_photo or
+        message.group_chat_created or
+        message.supergroup_chat_created or
+        message.channel_chat_created or
+        message.message_auto_delete_timer_changed or
+        message.migrate_to_chat_id or
+        message.migrate_from_chat_id or
+        message.pinned_message
+    ):
+        botwarn('unsupported type of message',context.bot)
     else:
-        if (message.invoice or
-            message.new_chat_members or
-            message.left_chat_member or
-            message.new_chat_title or
-            message.new_chat_photo or
-            message.delete_chat_photo or
-            message.group_chat_created or
-            message.supergroup_chat_created or
-            message.channel_chat_created or
-            message.message_auto_delete_timer_changed or
-            message.migrate_to_chat_id or
-            message.migrate_from_chat_id or
-            message.pinned_message
-        ):
-            botwarn('unsupported type of message',context.bot)
-        else:
-            # [TODO] sendDice/basketball/.../poll(forward back)
-            # check reply_to
-            dbmsgmapres = {}
-            if message.reply_to_message:
-                with Session.begin() as sess:
-                    dbq = sess.query(MESSAGE_MAP).\
-                        filter(MESSAGE_MAP.m_ch_id==botconfig['masterchatid']).\
-                            filter(MESSAGE_MAP.m_msg_id==message.reply_to_message.message_id).\
-                                filter(MESSAGE_MAP.s_ch_id==currentchat)
-                    dbmsgmap = dbq.first()
-                    if not dbmsgmap:
-                        botwarn('message being replied to not found, not sent', context.bot)
-                        return
-                    dbmsgmapres['s_ch_id'] = dbmsgmap.s_ch_id
-                    dbmsgmapres['s_msg_id'] = dbmsgmap.s_msg_id
-            if dbmsgmapres and dbmsgmapres['s_ch_id']!=currentchat:
-                botwarn('message being replied to not in current chat', context.bot)
-                return
-            slavemsg = context.bot.copy_message(
-                currentchat, # currentchat
-                from_chat_id=botconfig['masterchatid'], # chat.id
-                message_id=message.message_id,
-                reply_to_message_id=dbmsgmapres['s_msg_id'] if dbmsgmapres else None,
-                allow_sending_without_reply=True # send without reply if original ones deleted
-            )
-            # save to message/map
+        # [TODO] sendDice/basketball/.../poll(forward back)
+        # check reply_to
+        dbmsgmapres = {}
+        if message.reply_to_message:
             with Session.begin() as sess:
-                msg, cp = msgcompress(slavemsg)
-                dbslvmsg = MESSAGE(
-                    ch_id=currentchat, # XXX int(dbotstate.s_v)
-                    msg_id=slavemsg.message_id,
-                    content=msg,
-                    compressed=cp,
-                    timestamp=time()
-                )
-                sess.add(dbslvmsg)
-                dbnewmap = MESSAGE_MAP(
-                    m_ch_id=botconfig['masterchatid'],
-                    m_msg_id = message.message_id,
-                    s_ch_id = currentchat,
-                    s_msg_id = slavemsg.message_id,
-                    direction = MSGDIR.m2s,
-                    timestamp = time()
-                )
-                sess.add(dbnewmap)
-            # unnecessary
-            # msghistory(message,context.bot)
+                dbmsgmap = sess.query(MESSAGE_MAP).\
+                    filter(MESSAGE_MAP.m_ch_id==botconfig['masterchatid']).\
+                    filter(MESSAGE_MAP.m_msg_id==message.reply_to_message.message_id).\
+                    filter(MESSAGE_MAP.s_ch_id==currentchat).\
+                    first()
+                if not dbmsgmap:
+                    botwarn('message being replied to not found, not sent', context.bot)
+                    return
+                dbmsgmapres['s_ch_id'] = dbmsgmap.s_ch_id
+                dbmsgmapres['s_msg_id'] = dbmsgmap.s_msg_id
+        if dbmsgmapres and dbmsgmapres['s_ch_id']!=currentchat:
+            botwarn('message being replied to not in current chat', context.bot)
+            return
+        slavemsg = context.bot.copy_message(
+            currentchat, # currentchat
+            from_chat_id=botconfig['masterchatid'], # chat.id
+            message_id=message.message_id,
+            reply_to_message_id=dbmsgmapres['s_msg_id'] if dbmsgmapres else None,
+            allow_sending_without_reply=True # send without reply if original ones deleted
+        )
+        # save to message/map
+        with Session.begin() as sess:
+            msg, cp = msgcompress(slavemsg)
+            dbslvmsg = MESSAGE(
+                ch_id=currentchat, # XXX int(dbotstate.s_v)
+                msg_id=slavemsg.message_id,
+                content=msg,
+                compressed=cp,
+                timestamp=time()
+            )
+            sess.add(dbslvmsg)
+            dbnewmap = MESSAGE_MAP(
+                m_ch_id=botconfig['masterchatid'],
+                m_msg_id = message.message_id,
+                s_ch_id = currentchat,
+                s_msg_id = slavemsg.message_id,
+                direction = MSGDIR.m2s,
+                timestamp = time()
+            )
+            sess.add(dbnewmap)
+        # unnecessary
+        # msghistory(message,context.bot)
 
 
 # switch chat command handler, using inline keyboard1
@@ -434,8 +467,8 @@ def switchHandler(update: t.Update, context: te.CallbackContext):
     session = Session()
     chat, message = update.effective_chat, update.effective_message
     # if master CHAT is not inserted, insert it now
-    masterchat_in_db = (session.query(CHAT).filter_by(ch_id=chat.id).count()==1)
-    if masterchat_in_db:
+    masterchat_in_db = (session.query(CHAT).filter_by(ch_id=botconfig['masterchatid']).count()==1)
+    if not masterchat_in_db:
         with Session.begin() as sess:
             dbchat = CHAT(ch_id=chat.id,ch_name=getChatname(chat),ch_type=chatype(chat))
             sess.add(dbchat)
