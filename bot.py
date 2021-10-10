@@ -54,6 +54,7 @@ dbconf['db_url'] = dbtype+r'+psycopg2'+dburl[sidx:]
 sslmode = os.environ.get('DATABASE_SSL')
 sslmode = False if sslmode=='0' else True
 dbconf['sslmode'] = sslmode
+dbconf['dbverbose'] = os.environ.get('dbverbose','0')
 db.initdb(dbconf)
 
 

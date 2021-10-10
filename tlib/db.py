@@ -105,7 +105,7 @@ def initdb(dbconf):
         connect_args={
             'sslmode': 'require' if dbconfig['sslmode'] else 'prefer'
         },
-        echo=True
+        echo=(True if dbconf['dbverbose']!='0' else False)
     )
     e = dbconfig['engine']
     # create a Session and save in dbconfig

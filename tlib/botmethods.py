@@ -379,7 +379,12 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
                 MESSAGE_MAP,
                 sql.and_(
                     MESSAGE_MAP.m_ch_id==MESSAGE.ch_id,
-                    MESSAGE_MAP.m_msg_id==MESSAGE.msg_id,
+                    MESSAGE_MAP.m_msg_id==MESSAGE.msg_id
+                )
+            ).\
+            join(
+                MESSAGE2,
+                sql.and_(
                     MESSAGE_MAP.s_ch_id==MESSAGE2.ch_id,
                     MESSAGE_MAP.s_msg_id==MESSAGE2.msg_id
                 )
