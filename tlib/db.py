@@ -17,10 +17,10 @@ class BOTSTATE(BASE):
         return 'BOTSTATE s_k->s_v: ({})->({})'.format(self.s_k,self.s_v)
 
 class CHTYPE(enum.Enum):
-    private = 0
-    group = 1
-    supergroup = 2
-    channel = 3
+    private = 'private'
+    group = 'group'
+    supergroup = 'supergroup'
+    channel = 'channel'
 class CHAT(BASE):
     __tablename__ = 'CHAT'
     __table_args__ = (
@@ -46,8 +46,8 @@ class MESSAGE(BASE):
     timestamp = sql.Column('timestamp',sql.BigInteger)
 
 class MSGDIR(enum.Enum):
-    m2s = 1
-    s2m = 2
+    m2s = 'm2s'
+    s2m = 's2m'
 class MESSAGE_MAP(BASE):
     __tablename__ = 'MESSAGE_MAP'
     __table_args__ = (
