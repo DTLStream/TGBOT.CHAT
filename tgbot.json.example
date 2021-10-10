@@ -1,0 +1,8 @@
+{
+    "token": "19890604:deadbeef",
+    "masterid": "19890604",
+    "masterchatid": "19890604",
+    "proxy_url": "socks5://127.0.0.1:1080",
+    "webhook_url_base": "https://yourapp.herokuapp.com"
+}
+
