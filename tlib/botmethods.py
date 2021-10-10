@@ -84,7 +84,7 @@ def userinfoHandler(update: t.Update, context: te.CallbackContext):
 # message: from others, mastermsg: to masterchat
 def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
     mastermsg = None
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     try:
         if message.invoice:
             logger.debug('processing message type invoice')
@@ -292,7 +292,7 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
     message = update.effective_message
     # check chat and insert if chat not exists
     dbchat = None
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     with session.begin() as sess:
         dbq = sess.query(CHAT).filter_by(ch_id=chat.id)
         dbqcount = dbq.count()
@@ -345,7 +345,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
     message = update.effective_message
     # # [TODO] ERROR
     # check currentchat in db
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     with session.begin() as sess:
         dbq = sess.query(CHAT).filter_by(ch_id=botconfig['masterchatid'])
         if dbq.count()==0:
@@ -438,7 +438,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
 # switch chat command handler, using inline keyboard1
 def switchHandler(update: t.Update, context: te.CallbackContext):
     # get available chats
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     chats = []
     with session.begin() as sess:
         dbq = sess.query(CHAT).filter(CHAT.ch_id!=botconfig['masterchatid'])
@@ -479,7 +479,7 @@ def switchCallbackHandler(update: t.Update, context: te.CallbackContext):
         botwarn('invalid query source',context.bot)
         return
     ch_id = int(query.data)
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     message_queue = []
     message_history_id = None
     with session.begin() as sess:
@@ -555,7 +555,7 @@ def msgdecompress(message,compressed):
 
 # msgqueue: save message in queue, wait for forwarding
 def msgqueue(message:t.Message, chat:t.Chat, bot:t.Bot):
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     try:
         dbmsgque = MESSAGE_QUEUE(
             ch_id=chat.id,
@@ -571,7 +571,7 @@ def msgqueue(message:t.Message, chat:t.Chat, bot:t.Bot):
 # msghist: save message in history, for following proceeding (reply_to/...)
 # history messages are those within masterchat, not that within other chats
 def msghistory(message:t.Message, bot:t.Bot):
-    session = orm.sessionmaker(dbconfig['engine'])
+    session = dbconfig['session']
     try:
         dbmsghist = MESSAGE_HISTORY(
             ch_id=botconfig['masterchatid'],
