@@ -90,6 +90,9 @@ def initdb(dbconf):
         echo=True
     )
     e = dbconfig['engine']
+    # create a Session and save in dbconfig
+    sess = orm.sessionmaker(e)
+    dbconfig['session'] = sess
     # check tables existence
     logger.info('checking whether tables exist')
     all_tables_created = True
