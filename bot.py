@@ -68,8 +68,8 @@ updater.dispatcher.add_handler(
 updater.dispatcher.add_handler(
     te.MessageHandler(
         te.Filters.chat(botconfig['masterchatid']) & \
-            te.Filters.user(botconfig['masterid']) & \
-                (te.Filters.regex(r'/switch *')|(te.Filters.regex(r'/sw *'))),
+        te.Filters.user(botconfig['masterid']) & \
+        te.Filters.regex(r'^/sw(itch){0,1}\s*'),
         switchHandler
     )
 )
@@ -77,7 +77,7 @@ updater.dispatcher.add_handler(
     te.MessageHandler(
         te.Filters.chat(botconfig['masterchatid']) & \
         te.Filters.user(botconfig['masterid']) & \
-        te.Filters.regex(r'/d(elete *)'),
+        te.Filters.regex(r'^/de(lete){0,1}\s*'),
         deleteHandler
     )
 )

@@ -90,7 +90,7 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
         botwarn('{}'.format('usage: /d [ reply the message to be deleted ]'),context.bot)
         return
     target_message = message.reply_to_message
-    with session.begin() as sess:
+    with Session.begin() as sess:
         MESSAGE2 = orm.aliased(MESSAGE)
         dbmsgtup = sess.query(MESSAGE,MESSAGE2).\
             join(
@@ -186,14 +186,15 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
         elif message.left_chat_member:
             logger.debug('processing message type left_chat_member')
             member = message.left_chat_member
-            msg = 'left member: [{}](){}'.format(
+            msg = 'left member: [{}](tg://user?id={}){}'.format(
                 member.full_name,
                 member.id,
                 member.username if member.username else ''
             )
             mastermsg = bot.send_message(
                 botconfig['masterchatid'],
-                text=msg
+                text=msg,
+                parse_mode=t.ParseMode.MARKDOWN_V2
             )
         elif message.new_chat_title:
             logger.debug('processing message type new_chat_title')
