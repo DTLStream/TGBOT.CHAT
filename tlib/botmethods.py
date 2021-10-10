@@ -367,15 +367,30 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
     # check masterchat CHAT, if not exist, warn user to call /sw
     masterchat_in_db = (session.query(CHAT).filter_by(ch_id=botconfig['masterchatid']).count()==1)
     if not masterchat_in_db:
-        botwarn('{} receiveMasterHandler'.format('master chat not in db, try /sw'))
+        botwarn('{} receiveMasterHandler'.format('master chat not in db, try /sw'),context.bot)
         logger.info('{} receiveMasterHandler'.format('master chat not in db, try /sw'))
         return
     # begin saving message, checking currentchat, ...
     with Session.begin() as sess:
         # [x] check if the message is an edited one first
-        dbmsg = sess.query(MESSAGE).filter_by(ch_id=chat.id).\
-            filter_by(msg_id=message.message_id).first()
-        if dbmsg: # edited
+        MESSAGE2 = orm.aliased(MESSAGE)
+        dbmsgtup = sess.query(MESSAGE,MESSAGE2).\
+            join(
+                MESSAGE_MAP,
+                sql.and_(
+                    MESSAGE_MAP.m_ch_id==MESSAGE.ch_id,
+                    MESSAGE_MAP.m_msg_id==MESSAGE.msg_id,
+                    MESSAGE_MAP.s_ch_id==MESSAGE2.ch_id,
+                    MESSAGE_MAP.s_msg_id==MESSAGE2.msg_id
+                )
+            ).\
+            filter(MESSAGE.ch_id==chat.id).filter(MESSAGE.msg_id==message.message_id).first()
+        if dbmsgtup: # edited
+            dbmsg, dbslvmsg = dbmsgtup
+            # delete original message first
+            if not context.bot.delete_message(chat_id=dbslvmsg.ch_id,message_id=dbslvmsg.msg_id):
+                botwarn('edited message not deleted',context.bot)
+            # save in OLD_MESSAGE_BUCKET
             dbbucketmsg = OLD_MESSAGE_BUCKET(
                 ch_id=dbmsg.ch_id,
                 msg_id=dbmsg.msg_id,
@@ -385,6 +400,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
             )
             sess.add(dbbucketmsg)
             sess.delete(dbmsg)
+            sess.delete(dbslvmsg)
         # save message
         msg, cp = msgcompress(message)
         dbmsg = MESSAGE(
