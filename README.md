@@ -10,8 +10,10 @@ a simple telegram chat bot working on both local hosts and Heroku, with database
 - [x] switch chat context, support multiple chats
 - [x] database support, with message_queue and message_history
 - [x] reply_to
+- [x] delete message sent by owner
+- [x] delete message sent by peers
+- [x] edit message for both owner and peers (not exactly the same behaviour as editMessage)
 - [ ] dice/basketball/.../poll/quiz/... special message support
-- [ ] delete message sent by owner
 - [ ] scheduled notification when new messages arrive in another chat
 - [ ] scheduled database cleanup (due to Heroku db free plan limit)
 
@@ -23,6 +25,7 @@ a simple telegram chat bot working on both local hosts and Heroku, with database
    1. `DATABASE_SSL=0` (optional) db does not require SSL
    2. `DATABASE_URL='postgresql://localhost/tgbot'` (mandatory) database url, which has already been given when running on Heroku
    3. `tgbotdev=1` (optional) bot is run on local host, using long poll; otherwise on Heroku using webhook 
+   4. `dbverbose=1` (optional) turn on echo
 3. run `bot.py`
 
 ##### Other Functions:

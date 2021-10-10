@@ -110,7 +110,7 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
             filter(MESSAGE.ch_id==chat.id).\
             filter(MESSAGE.msg_id==target_message.message_id).first()
         if not dbmsgtup:
-            botwarn('{}'.format('target message not found in map, failed to delete'),context.bot)
+            botwarn('{}'.format('target message not found in map, not deleted'),context.bot)
             return
         # get mapped messages
         msg, slvmsg = dbmsgtup
@@ -126,26 +126,31 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
         sess.add(dbmsgbucket)
 
         # delete messages
-        # master
+        # command, can be deleted immediately without hesitation
         ret = context.bot.delete_message(
-            chat_id=msg.ch_id,
-            message_id=msg.msg_id
+            chat_id=chat.id,
+            message_id=message.message_id
         )
-        # if not ret: botwarn('master message not deleted',context.bot)
+        # if not ret: botwarn('/d command not deleted',context.bot)
+
         # slave
         ret = context.bot.delete_message(
             chat_id=slvmsg.ch_id,
             message_id=slvmsg.msg_id
         )
         # only slave message cannot be observed directly
-        if not ret: botwarn('slave message not deleted',context.bot)
-        # command
-        ret = context.bot.delete_message(
-            chat_id=chat.id,
-            message_id=message.message_id
-        )
-        # if not ret: botwarn('/d command not deleted',context.bot)
+        # if slave message not deleted, then warn and rollback
+        if not ret:
+            botwarn('slave message not deleted, rollback',context.bot)
+            return
         
+        # master
+        ret = context.bot.delete_message(
+            chat_id=msg.ch_id,
+            message_id=msg.msg_id
+        )
+        # if not ret: botwarn('master message not deleted',context.bot)
+
         # remove msg,slvmsg in db
         sess.delete(msg)
         sess.delete(slvmsg)
