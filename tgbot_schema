@@ -1,0 +1,51 @@
+PostgreSQL
+
+TABLE BOTSTATE
+s_k:string(255)
+s_v:string(255)
+
+TABLE CHAT
+ch_id:bigint
+ch_name:string
+ch_type:enum # private,group,supergroup,channel
+
+TABLE MESSAGE
+ch_id:bigint
+msg_id:bigint
+content:largebinary
+compressed:boolean
+timestamp:bigint
+primarykey ch_id,msg_id
+
+# # if a message is saved in queue, no map; after sending to master from queue, add to map
+TABLE MESSAGE_MAP
+m_ch_id:bigint # master
+m_msg_id:bigint
+s_ch_id:bigint # slave
+s_msg_id:bigint
+direction:enum # forward(master->slave), backward(slave->master)
+primarykey m_ch_id,m_msg_id,s_ch_id,s_msg_id
+foreignkey m_ch_id,m_msg_id
+foreignkey s_ch_id,s_msg_id
+
+# # history contains messages of mstchat in map, but not in queue
+TABLE MESSAGE_HISTORY
+ch_id:bigint
+msg_id:bigint
+timestamp:bigint
+primarykey ch_id,msg_id
+foreignkey ch_id,msg_id
+
+# # message queue for messages not forwarded (currentchat unmatch)
+# # should be able to handle deleted msg, for example copy content and send to master
+TABLE MESSAGE_QUEUE
+ch_id:bigint
+msg_id:bigint
+timestamp:bigint
+primarykey ch_id,msg_id
+foreignkey ch_id,msg_id
+
+####
+TODO
+when a message is removed from MESSAGE, map should be deleted, and the mapped one should also be deleted
+####
