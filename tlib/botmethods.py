@@ -129,6 +129,7 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
         # if slave message not deleted, then warn and rollback
         if not ret:
             botwarn('slave message not deleted, rollback',context.bot)
+            sess.rollback()
             return
         
         # master
@@ -386,15 +387,7 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
                 sess.delete(dbslvmsg)
                 sess.delete(dbmstmsg)
             # insert message into db
-            cont, cp = msgcompress(message)
-            dbmsg = MESSAGE(
-                ch_id=chat.id,
-                msg_id=message.message_id,
-                content=cont,
-                compressed=cp,
-                timestamp=time()
-            )
-            sess.add(dbmsg)
+            msgsave(sess, chat.id, message)
     except Exception as e:
         botwarn('{}'.format(e),context.bot)
         logger.warn('{} receiveHandler'.format(e))
@@ -507,15 +500,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         )
         # save to message/map
         with Session.begin() as sess:
-            msg, cp = msgcompress(slavemsg)
-            dbslvmsg = MESSAGE(
-                ch_id=currentchat, # XXX int(dbotstate.s_v)
-                msg_id=slavemsg.message_id,
-                content=msg,
-                compressed=cp,
-                timestamp=time()
-            )
-            sess.add(dbslvmsg)
+            msgsave(sess,currentchat,slavemsg)
             dbnewmap = MESSAGE_MAP(
                 m_ch_id=botconfig['masterchatid'],
                 m_msg_id = message.message_id,
