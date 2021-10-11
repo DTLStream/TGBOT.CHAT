@@ -284,22 +284,19 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
         else:
             logger.debug('processing ordinary message')
             mastermsg = message.forward(botconfig['masterchatid'])
-            
+        
         # insert message in MESSAGE/MESSAGE_MAP immediately in case reply_to_message throws
         if mastermsg: # mastermsg successfully sent
             with Session.begin() as sess:
                 # MESSAGE
                 msgsave(sess, botconfig['masterchatid'], mastermsg)
                 # MESSAGE_MAP
-                dbmsgmap = MESSAGE_MAP(
-                    m_ch_id=botconfig['masterchatid'],
-                    m_msg_id = mastermsg.message_id,
-                    s_ch_id = chat.id,
-                    s_msg_id = message.message_id,
-                    direction = MSGDIR.s2m,
-                    timestamp = time()
+                msgmapsave(
+                    sess,
+                    botconfig['masterchatid'],mastermsg.message_id,
+                    chat.id,message.message_id,
+                    MSGDIR.s2m
                 )
-                sess.add(dbmsgmap)
         else:
             botwarn('forward failed, check mastermsg', bot)
             logger.info('mastermsg: {} forwardRoute'.format(mastermsg))
@@ -457,7 +454,8 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         msgsave(sess, chat.id, message)
         
         
-    if (message.invoice or
+    if (
+        message.invoice or
         message.new_chat_members or
         message.left_chat_member or
         message.new_chat_title or
@@ -501,15 +499,12 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         # save to message/map
         with Session.begin() as sess:
             msgsave(sess,currentchat,slavemsg)
-            dbnewmap = MESSAGE_MAP(
-                m_ch_id=botconfig['masterchatid'],
-                m_msg_id = message.message_id,
-                s_ch_id = currentchat,
-                s_msg_id = slavemsg.message_id,
-                direction = MSGDIR.m2s,
-                timestamp = time()
+            msgmapsave(
+                sess,
+                botconfig['masterchatid'],message.message_id,
+                currentchat,slavemsg.message_id,
+                MSGDIR.m2s
             )
-            sess.add(dbnewmap)
     session.close()
 
 # switch chat command handler, using inline keyboard1
@@ -695,6 +690,18 @@ def msgsave(sess, ch_id, message:t.Message):
     sess.add(dbmsg)
     return dbmsg # return dbmsg for further use
 
+# save message map
+def msgmapsave(sess, m_ch_id, m_msg_id, s_ch_id, s_msg_id, direction):
+    dbmsgmap = MESSAGE_MAP(
+        m_ch_id=m_ch_id,
+        m_msg_id=m_msg_id,
+        s_ch_id=s_ch_id,
+        s_msg_id=s_msg_id,
+        direction=direction,
+        timestamp = time()
+    )
+    sess.add(dbmsgmap)
+    return dbmsgmap
 
 # return chat type enum
 def chatype(chat:t.Chat):
