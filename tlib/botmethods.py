@@ -693,6 +693,7 @@ def msgsave(sess, ch_id, message:t.Message):
         timestamp=time()
     )
     sess.add(dbmsg)
+    return dbmsg # return dbmsg for further use
 
 
 # return chat type enum
