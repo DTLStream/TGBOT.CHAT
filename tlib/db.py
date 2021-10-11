@@ -44,6 +44,9 @@ class MESSAGE(BASE):
     content = sql.Column('content',sql.LargeBinary)
     compressed = sql.Column('compressed',sql.Boolean)
     timestamp = sql.Column('timestamp',sql.BigInteger)
+    def __repr__(self):
+        return 'MESSAGE ch_id:{} msg_id:{} timestamp:{} compressed:{}'.\
+            format(self.ch__id,self.msg_id,self.timestamp,self.compressed)
 
 class MSGDIR(enum.Enum):
     m2s = 'm2s'
@@ -63,17 +66,16 @@ class MESSAGE_MAP(BASE):
     s_msg_id = sql.Column('s_msg_id',sql.BigInteger)
     direction = sql.Column('direction',sql.Enum(MSGDIR),nullable=False)
     timestamp = sql.Column('timestamp',sql.BigInteger)
+    def __repr__(self):
+        return 'MESSAGE_MAP (master,slave): ({},{}){}({},{})'.\
+            format(
+                self.m_ch_id,self.m_msg_id,
+                ('->' if self.direction==MSGDIR.m2s else '<-'),
+                self.s_ch_id,self.s_msg_id
+            )
 
 # unnecessary
-# class MESSAGE_HISTORY(BASE):
-#     __tablename__ = 'MESSAGE_HISTORY'
-#     __table_args__ = (
-#         sql.PrimaryKeyConstraint('ch_id','msg_id',name='mh_pk'),
-#         sql.ForeignKeyConstraint(['ch_id','msg_id'],['MESSAGE.ch_id','MESSAGE.msg_id'])
-#     )
-#     ch_id = sql.Column('ch_id',sql.BigInteger)
-#     msg_id = sql.Column('msg_id',sql.BigInteger)
-#     timestamp = sql.Column('timestamp',sql.BigInteger)
+# class MESSAGE_HISTORY(BASE)
 
 class MESSAGE_QUEUE(BASE):
     __tablename__ = 'MESSAGE_QUEUE'
@@ -85,6 +87,9 @@ class MESSAGE_QUEUE(BASE):
     ch_id = sql.Column('ch_id',sql.BigInteger)
     msg_id = sql.Column('msg_id',sql.BigInteger)
     timestamp = sql.Column('timestamp',sql.BigInteger)
+    def __repr__(self):
+        return 'MESSAGE_QUEUE ch_id:{} msg_id:{} timestamp:{}'.\
+            format(self.ch_id,self.msg_id,self.timestamp)
 
 class OLD_MESSAGE_BUCKET(BASE):
     __tablename__ = 'OLD_MESSAGE_BUCKET'
@@ -94,6 +99,9 @@ class OLD_MESSAGE_BUCKET(BASE):
     content = sql.Column('content',sql.LargeBinary)
     compressed = sql.Column('compressed',sql.Boolean)
     timestamp = sql.Column('timestamp',sql.BigInteger)
+    def __repr__(self):
+        return 'OLD_MESSAGE_BUCKET ch_id:{} msg_id:{} timestamp:{} (entity_id:{})'.\
+            format(self.ch_id,self.msg_id,self.timestamp,self.entity_id)
 
 def initdb(dbconf):
     dbconfig.update(dbconf) # db_url: sqlalchemy url
@@ -127,10 +135,6 @@ def initdb(dbconf):
     if not inspector.has_table('MESSAGE_MAP'):
         logger.info('MESSAGE_MAP table not exists')
         all_tables_created = False
-    # unnecessary
-    # if not inspector.has_table('MESSAGE_HISTORY'):
-    #     logger.info('MESSAGE_HISTORY table not exists')
-    #     all_tables_created = False
     if not inspector.has_table('MESSAGE_QUEUE'):
         logger.info('MESSAGE_QUEUE table not exists')
         all_tables_created = False

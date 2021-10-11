@@ -1,6 +1,7 @@
 from functools import reduce
 
 from telegram import messageid
+from telegram.message import Message
 from .errc import * # error code
 from .db import * # database methods, currently only postgresql supported
 import telegram as t
@@ -92,22 +93,8 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
     target_message = message.reply_to_message
     with Session.begin() as sess:
         MESSAGE2 = orm.aliased(MESSAGE)
-        dbmsgtup = sess.query(MESSAGE,MESSAGE2).\
-            join(
-                MESSAGE_MAP,
-                sql.and_(
-                    MESSAGE_MAP.m_ch_id==MESSAGE.ch_id,
-                    MESSAGE_MAP.m_msg_id==MESSAGE.msg_id,
-                )
-            ).\
-            join(
-                MESSAGE2,
-                sql.and_(
-                    MESSAGE_MAP.s_ch_id==MESSAGE2.ch_id,
-                    MESSAGE_MAP.s_msg_id==MESSAGE2.msg_id,
-                )
-            ).\
-            filter(MESSAGE.ch_id==chat.id).\
+        dbq = msgmapjoin(sess, MESSAGE2)
+        dbmsgtup = dbq.filter(MESSAGE.ch_id==chat.id).\
             filter(MESSAGE.msg_id==target_message.message_id).first()
         if not dbmsgtup:
             botwarn('{}'.format('target message not found in map, not deleted'),context.bot)
@@ -151,9 +138,11 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
         )
         # if not ret: botwarn('master message not deleted',context.bot)
 
-        # remove msg,slvmsg in db
+        # remove msg,slvmsg in db, on delete cascade for MAP
         sess.delete(msg)
         sess.delete(slvmsg)
+    # close session at the end
+    session.close()
 
 
 # forward based on different message types, from others to master
@@ -208,7 +197,6 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
                 botconfig['masterchatid'],
                 text=msg
             )
-
         elif message.new_chat_photo:
             logger.debug('processing message type new_chat_photo')
             ps = message.new_chat_photo
@@ -228,7 +216,6 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
                 botconfig['masterchatid'],
                 text=msg
             )
-
         elif message.group_chat_created:
             logger.debug('processing message type group_chat_created')
             msg = 'group chat[{}] created'.format(message.chat.username)
@@ -300,16 +287,8 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
         # insert message in MESSAGE/MESSAGE_MAP immediately in case reply_to_message throws
         if mastermsg: # mastermsg successfully sent
             with Session.begin() as sess:
-                cont, cp = msgcompress(mastermsg)
                 # MESSAGE
-                dbmastermsg = MESSAGE(
-                    msg_id=mastermsg.message_id,
-                    ch_id=botconfig['masterchatid'],
-                    content=cont,
-                    compressed=cp,
-                    timestamp=time()
-                )
-                sess.add(dbmastermsg)
+                msgsave(sess, botconfig['masterchatid'], mastermsg)
                 # MESSAGE_MAP
                 dbmsgmap = MESSAGE_MAP(
                     m_ch_id=botconfig['masterchatid'],
@@ -354,7 +333,7 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
         # however once the message is successfully sent, it should be added to MAP/HISTORY
         botwarn('{}'.format(e),bot)
         logger.warn('{} forwardRoute'.format(e))
-
+    session.close()
 
 # receive message from others [x] quote/reply_to/switch
 # 1: currentchat check
@@ -387,19 +366,25 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
         # [x] edited message has same id, which should be updated in db
         with Session.begin() as sess:
             # check if new message is an edited message
-            dbmsg = sess.query(MESSAGE).\
-                filter_by(ch_id=chat.id).filter_by(msg_id=message.message_id).first()
-            if dbmsg: # edited
-                # save in bucket, delete map in DB, delete message in DB (ondelete=cascade)
+            MESSAGE2 = orm.aliased(MESSAGE)
+            dbq = msgmapjoin(sess, MESSAGE2)
+            dbmsgmap = dbq.filter(MESSAGE2.ch_id==chat.id).\
+                filter(MESSAGE2.msg_id==message.message_id).\
+                first()
+            if dbmsgmap: # edited message
+                dbmstmsg, dbslvmsg = dbmsgmap
+                # save in bucket, delete map in DB, delete message in DB
+                # (ondelete=cascade not work due to same trasaction, manually delete all)
                 dbbucketmsg = OLD_MESSAGE_BUCKET(
-                    ch_id=dbmsg.ch_id,
-                    msg_id=dbmsg.msg_id,
-                    content=dbmsg.content,
-                    compressed=dbmsg.compressed,
-                    timestamp=dbmsg.timestamp
+                    ch_id=dbslvmsg.ch_id,
+                    msg_id=dbslvmsg.msg_id,
+                    content=dbslvmsg.content,
+                    compressed=dbslvmsg.compressed,
+                    timestamp=dbslvmsg.timestamp
                 )
                 sess.add(dbbucketmsg)
-                sess.delete(dbmsg)
+                sess.delete(dbslvmsg)
+                sess.delete(dbmstmsg)
             # insert message into db
             cont, cp = msgcompress(message)
             dbmsg = MESSAGE(
@@ -424,7 +409,7 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
     # else: save in MESSAGE_QUEUE
     else:
         msgqueue(message,chat,context.bot)
-
+    session.close()
 
 # receive message from master
 # 1: check if currentchat is available
@@ -453,26 +438,16 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
     with Session.begin() as sess:
         # [x] check if the message is an edited one first
         MESSAGE2 = orm.aliased(MESSAGE)
-        dbmsgtup = sess.query(MESSAGE,MESSAGE2).\
-            join(
-                MESSAGE_MAP,
-                sql.and_(
-                    MESSAGE_MAP.m_ch_id==MESSAGE.ch_id,
-                    MESSAGE_MAP.m_msg_id==MESSAGE.msg_id
-                )
-            ).\
-            join(
-                MESSAGE2,
-                sql.and_(
-                    MESSAGE_MAP.s_ch_id==MESSAGE2.ch_id,
-                    MESSAGE_MAP.s_msg_id==MESSAGE2.msg_id
-                )
-            ).\
-            filter(MESSAGE.ch_id==chat.id).filter(MESSAGE.msg_id==message.message_id).first()
+        dbq = msgmapjoin(sess, MESSAGE2)
+        dbmsgtup = dbq.filter(MESSAGE.ch_id==chat.id).\
+            filter(MESSAGE.msg_id==message.message_id).first()
         if dbmsgtup: # edited
             dbmsg, dbslvmsg = dbmsgtup
             # delete original message first
-            if not context.bot.delete_message(chat_id=dbslvmsg.ch_id,message_id=dbslvmsg.msg_id):
+            if not context.bot.delete_message(
+                chat_id=dbslvmsg.ch_id,
+                message_id=dbslvmsg.msg_id
+            ):
                 botwarn('edited message not deleted',context.bot)
             # save in OLD_MESSAGE_BUCKET
             dbbucketmsg = OLD_MESSAGE_BUCKET(
@@ -486,15 +461,8 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
             sess.delete(dbmsg)
             sess.delete(dbslvmsg)
         # save message
-        msg, cp = msgcompress(message)
-        dbmsg = MESSAGE(
-            ch_id=chat.id,
-            msg_id=message.message_id,
-            content=msg,
-            compressed=cp,
-            timestamp=time()
-        )
-        sess.add(dbmsg)
+        msgsave(sess, chat.id, message)
+        
         
     if (message.invoice or
         message.new_chat_members or
@@ -557,9 +525,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
                 timestamp = time()
             )
             sess.add(dbnewmap)
-        # unnecessary
-        # msghistory(message,context.bot)
-
+    session.close()
 
 # switch chat command handler, using inline keyboard1
 def switchHandler(update: t.Update, context: te.CallbackContext):
@@ -601,6 +567,7 @@ def switchHandler(update: t.Update, context: te.CallbackContext):
             text='choose a chat',
             reply_markup=kbmarkup
         )
+    session.close()
 
 
 # switch chat callback query handler
@@ -672,7 +639,7 @@ def switchCallbackHandler(update: t.Update, context: te.CallbackContext):
     chat_obj = t.Chat(id=ch_id,type=ch_type,title=dbqchat.ch_name)
     for msg in queuedmessages:
         forwardRoute(msg,chat_obj,context.bot)
-
+    session.close()
 
 # [TODO] register notification callback
 
@@ -709,41 +676,49 @@ def msgqueue(message:t.Message, chat:t.Chat, bot:t.Bot):
     except Exception as e:
         botwarn('{}'.format(e),bot)
         logger.warn('{} msgqueue'.format(e))
+    session.close()
 
+# return a query, the (MESSAGE, MESSAGE2) tuple joined with MESSAGE_MAP
+def msgmapjoin(sess,MESSAGE2):
+    dbq = sess.query(MESSAGE,MESSAGE2).\
+        join(
+            MESSAGE_MAP,
+            sql.and_(
+                MESSAGE_MAP.m_ch_id==MESSAGE.ch_id,
+                MESSAGE_MAP.m_msg_id==MESSAGE.msg_id
+            )
+        ).\
+        join(
+            MESSAGE2,
+            sql.and_(
+                MESSAGE_MAP.s_ch_id==MESSAGE2.ch_id,
+                MESSAGE_MAP.s_msg_id==MESSAGE2.msg_id
+            )
+        )
+    return dbq
 
-# MESSAGE_HISTORY unnecessary, history already recorded in MESSAGE_MAP.timestamp
-# msghist: save message in history, for following proceeding (reply_to/...)
-# history messages are those within masterchat, not that within other chats
-def msghistory(message:t.Message, bot:t.Bot):
-    pass
-    # Session = dbconfig['session']
-    # session = Session()
-    # try:
-    #     dbmsghist = MESSAGE_HISTORY(
-    #         ch_id=botconfig['masterchatid'],
-    #         msg_id=message.message_id,
-    #         timestamp=time()
-    #     )
-    #     with Session.begin() as sess:
-    #         sess.add(dbmsghist)
-    # except Exception as e:
-    #     botwarn('{}\nmsghistory'.format(e),bot)
+# save message
+def msgsave(sess, ch_id, message:t.Message):
+    msg, cp = msgcompress(message)
+    dbmsg = MESSAGE(
+        ch_id=ch_id,
+        msg_id=message.message_id,
+        content=msg,
+        compressed=cp,
+        timestamp=time()
+    )
+    sess.add(dbmsg)
+
 
 # return chat type enum
 def chatype(chat:t.Chat):
     return CHTYPE(chat.type)
-    # ttype = CHTYPE.private
-    # if chat.type=='channel':ttype=CHTYPE.channel
-    # elif chat.type=='group':ttype=CHTYPE.supergroup
-    # elif chat.type=='supergroup':ttype=CHTYPE.supergroup
+
 
 # return name of enum var
 def chatypestr(chtype:CHTYPE):
     return chtype.name
-    # if chtype==CHTYPE.private: return 'private'
-    # if chtype==CHTYPE.group: return 'group'
-    # if chtype==CHTYPE.supergroup: return 'supergroup'
-    # if chtype==CHTYPE.channel: return 'channel'
+
 
 def getChatname(chat:t.Chat):
     ch_name = chat.username if chat.username else (
