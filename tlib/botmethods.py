@@ -396,7 +396,7 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
         msgqueue(message,chat,context.bot)
     session.close()
 
-# receive message from master
+# receive message from master, special messages are handled by calling other handlers
 # 1: check if currentchat is available
 # 2: message type
 # 3: copyMessage
@@ -419,6 +419,14 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         botwarn('{} receiveMasterHandler'.format('master chat not in db, try /sw'),context.bot)
         logger.info('{} receiveMasterHandler'.format('master chat not in db, try /sw'))
         return
+    # hook special messages
+    # dice
+    if message.dice:
+        return diceMasterHandler(update,context)
+    # poll
+    if message.poll:
+        return pollMasterHandler(update,context)
+
     # begin saving message, checking currentchat, ...
     with Session.begin() as sess:
         # [x] check if the message is an edited one first
@@ -441,7 +449,6 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         # save message
         msgsave(sess, chat.id, message)
         
-        
     if (
         message.invoice or
         message.new_chat_members or
@@ -458,6 +465,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         message.pinned_message
     ):
         botwarn('unsupported type of message',context.bot)
+    
     else:
         # [TODO] sendDice/basketball/.../poll(forward back)
         # check reply_to
@@ -494,6 +502,18 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
                 MSGDIR.m2s
             )
     session.close()
+
+# diceMasterHandler: handle messages with Dice, and dice,basketball,bowling,football,dart,slot
+def diceMasterHandler(update: t.Update, context: te.CallbackContext):
+    pass # (🎲🎯🎳-6)(🏀⚽-5)(🎰-64)
+    # if message.dice, copy
+    # else send based on command
+    # finally forward, delete, save slavemsg, save mastermsg, save msgmap
+
+
+def pollMasterHandler(update: t.Update, context: te.CallbackContext):
+    pass
+
 
 # switch chat command handler, using inline keyboard1
 def switchHandler(update: t.Update, context: te.CallbackContext):
