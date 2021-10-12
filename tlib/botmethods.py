@@ -1,11 +1,8 @@
 from functools import reduce
 
-from telegram import messageid
-from telegram.message import Message
 from .errc import * # error code
 from .db import * # database methods, currently only postgresql supported
 import telegram as t
-from telegram import parsemode
 import telegram.ext as te
 import time as tm # timestamp
 import json # decode db objects
@@ -381,8 +378,8 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
                     # remove it from MESSAGE, cause queued one to be removed
                     msgbucketsave(sess, dbmsg)
                     sess.delete(dbmsg)
-                # insert message into db
-                msgsave(sess, chat.id, message)
+            # insert message into db
+            msgsave(sess, chat.id, message)
     except Exception as e:
         botwarn('{}'.format(e),context.bot)
         logger.warn('{} receiveHandler'.format(e))
