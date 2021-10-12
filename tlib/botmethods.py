@@ -291,17 +291,24 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
         
         # insert message in MESSAGE/MESSAGE_MAP immediately in case reply_to_message throws
         if mastermsg: # mastermsg successfully sent
-            with Session.begin() as sess:
-                # MESSAGE
-                msgsave(sess, botconfig['masterchatid'], mastermsg)
-                msgsave(sess, chat.id, message) # not save in receiveHandler, save here
-                # MESSAGE_MAP
-                msgmapsave(
-                    sess,
-                    botconfig['masterchatid'],mastermsg.message_id,
-                    chat.id,message.message_id,
-                    MSGDIR.s2m
-                )
+            try:
+                with Session.begin() as sess:
+                    # MESSAGE
+                    # master
+                    msgsave(sess, botconfig['masterchatid'], mastermsg)
+                    # slave
+                    # revert, seeking for better solution
+                    # msgsave(sess, chat.id, message) # not save in receiveHandler, save here # revert
+                    # MESSAGE_MAP
+                    msgmapsave(
+                        sess,
+                        botconfig['masterchatid'],mastermsg.message_id,
+                        chat.id,message.message_id,
+                        MSGDIR.s2m
+                    )
+            except Exception as e:
+                botwarn('{} forwardRoute'.format(e), bot)
+                logger.warn('{} forwardRoute'.format(e))
         else:
             botwarn('forward failed, check mastermsg', bot)
             logger.info('mastermsg: {} forwardRoute'.format(mastermsg))
@@ -402,7 +409,8 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
             # not save here
             # do msgsave in queue/forwardRoute as a transaction
             # to avoid redundant MESSAGE if the mastermsg/msgque is not processed successfully
-            # msgsave(sess, chat.id, message)
+            # revert, may cause redundant MESSAGE
+            msgsave(sess, chat.id, message)
     except Exception as e:
         botwarn('{} receiveHandler'.format(e),context.bot)
         logger.warn('{} receiveHandler'.format(e))
@@ -419,7 +427,10 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
     # else: save in MESSAGE_QUEUE
     else:
         # msgsave in messageQueue within a transaction
-        messageQueue(message,chat,context.bot) # messageQueue has the same position as forwardRoute
+        # messageQueue has the same position as forwardRoute
+        # however this would cause error when dequeueing in switchcallbackhandler (duplicated message)
+        # fix: check if msgsave
+        messageQueue(message,chat,context.bot)
     session.close()
 
 # receive message from master, special messages are handled by calling other handlers
@@ -765,7 +776,7 @@ def messageQueue(message:t.Message, chat:t.Chat, bot:t.Bot):
     session = Session()
     try:
         with Session.begin() as sess:
-            msgsave(sess, chat.id, message)
+            # msgsave(sess, chat.id, message) # revert, seeking for better solution
             dbmsgque = MESSAGE_QUEUE(
                 ch_id=chat.id,
                 msg_id=message.message_id,
