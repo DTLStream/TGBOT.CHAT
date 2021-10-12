@@ -335,7 +335,7 @@ def forwardRoute(message: t.Message, chat: t.Chat, bot: t.Bot):
     except Exception as e:
         # exception may be other problems including network ones,
         # however once the message is successfully sent, it should be added to MAP/HISTORY
-        botwarn('{}'.format(e),bot)
+        botwarn('{} forwardRoute'.format(e),bot)
         logger.warn('{} forwardRoute'.format(e))
     session.close()
 
@@ -404,7 +404,7 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
             # to avoid redundant MESSAGE if the mastermsg/msgque is not processed successfully
             # msgsave(sess, chat.id, message)
     except Exception as e:
-        botwarn('{}'.format(e),context.bot)
+        botwarn('{} receiveHandler'.format(e),context.bot)
         logger.warn('{} receiveHandler'.format(e))
         # return if message cannot be inserted
         session.close() # close before return
@@ -614,7 +614,8 @@ def diceMasterHandler(update: t.Update, context: te.CallbackContext):
                 MSGDIR.m2s
             )
     except Exception as e:
-        botwarn('{}'.format(e),context.bot)
+        botwarn('{} diceMasterHandler'.format(e),context.bot)
+        logger.warn('{} diceMasterHandler'.format(e))
 
 
 def pollMasterHandler(update: t.Update, context: te.CallbackContext):
@@ -711,8 +712,8 @@ def switchCallbackHandler(update: t.Update, context: te.CallbackContext):
                     allow_sending_without_reply=False # must be a reply
                 )
             except Exception as e:
-                botwarn('{}'.format(e),context.bot)
-                logger.warn('{}'.format(e))
+                botwarn('{} switchCallbackHandler'.format(e),context.bot)
+                logger.warn('{} switchCallbackHandler'.format(e))
                 # continue even even if the message to be replied does not exist
         # queue
         # try join, delete queued messages one by one
@@ -773,7 +774,7 @@ def messageQueue(message:t.Message, chat:t.Chat, bot:t.Bot):
             sess.add(dbmsgque)
         # [TODO] set botwarn schedule since current chat not matched
     except Exception as e:
-        botwarn('{}'.format(e),bot)
+        botwarn('{} messageQueue'.format(e),bot)
         logger.warn('{} messageQueue'.format(e))
     session.close()
 
