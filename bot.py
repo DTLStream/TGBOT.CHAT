@@ -93,7 +93,7 @@ updater.dispatcher.add_handler(
         te.Filters.chat(botconfig['masterchatid']) & \
         te.Filters.user(botconfig['masterid']) & \
         te.Filters.regex(
-            r'^/(dice)|(slot(machine)?)|basketball)|(soccer)|'+
+            r'^/(dice)|(slot(machine)?)|(basket(ball)?)|(soccer)|'+
             r'(football)|(dart(board)?)|(bowl(ing)?)$'
         ),
         diceMasterHandler
