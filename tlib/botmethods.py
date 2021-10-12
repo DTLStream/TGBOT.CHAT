@@ -774,6 +774,13 @@ def msgdecompress(message,compressed):
 def messageQueue(message:t.Message, chat:t.Chat, bot:t.Bot):
     Session = dbconfig['session']
     session = Session()
+    # decide if notification should be sent
+    notification_flag = False
+    latest_timestamp = getLatestQueuedTime(session)
+    ch_in_que = chatInQueue(session,chat)
+    # 30min idle before this new message comes
+    if not ch_in_que or not latest_timestamp or time()-latest_timestamp>1800:
+        notification_flag = True
     try:
         with Session.begin() as sess:
             # msgsave(sess, chat.id, message) # revert, seeking for better solution
@@ -783,10 +790,23 @@ def messageQueue(message:t.Message, chat:t.Chat, bot:t.Bot):
                 timestamp=time()
             )
             sess.add(dbmsgque)
-        # [TODO] set botwarn schedule since current chat not matched
+        # [x] set botwarn schedule since current chat not matched
     except Exception as e:
         botwarn('{} messageQueue'.format(e),bot)
         logger.warn('{} messageQueue'.format(e))
+    
+    # send notification if flag is set
+    if notification_flag:
+        dbchats = getQueued(session)
+        msg = 'there are new messages from chats not read yet\n'
+        for dbchat in dbchats:
+            msg += '[{}]({})-{}\n'.format(
+                dbchat.ch_name,
+                dbchat.ch_id,
+                chatypestr(dbchat.ch_type)
+            )
+        botwarn(msg,bot)
+
     session.close()
 
 # return a query, the (MESSAGE, MESSAGE2) tuple joined with MESSAGE_MAP
@@ -845,6 +865,21 @@ def msgbucketsave(sess, dbmsg):
     )
     sess.add(dbbucketmsg)
     return dbbucketmsg
+
+# getQueued: return chats of queued message
+def getQueued(session):
+    chats = session.query(CHAT).\
+        join(MESSAGE_QUEUE,MESSAGE_QUEUE.ch_id==CHAT.ch_id).\
+        order_by(MESSAGE_QUEUE.timestamp.asc()).all()
+    return chats
+
+# getLatestQueuedTime: return the largest timestamp in MSG_QUEUE
+def getLatestQueuedTime(session):
+    return session.query(sql.func.max(MESSAGE_QUEUE.timestamp)).scalar()
+
+# whether chat is in queue
+def chatInQueue(session,chat):
+    return session.query(MESSAGE_QUEUE).filter(MESSAGE_QUEUE.ch_id==chat.id).first()
 
 # get currentchat in int, if not exists then None
 def getCurrentChat(session):
