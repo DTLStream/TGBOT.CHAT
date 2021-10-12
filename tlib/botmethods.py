@@ -103,14 +103,7 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
         msg, slvmsg = dbmsgtup
         # save msg/slvmsg (only one copy of message is required, since the other one is almost the same)
         # save msg
-        dbmsgbucket = OLD_MESSAGE_BUCKET(
-            ch_id=msg.ch_id,
-            msg_id=msg.msg_id,
-            content=msg.content,
-            compressed=msg.compressed,
-            timestamp=msg.timestamp
-        )
-        sess.add(dbmsgbucket)
+        msgbucketsave(sess, msg)
 
         # delete messages
         # command, can be deleted immediately without hesitation
@@ -346,7 +339,7 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
     # check chat and insert if chat not exists
     dbchat = None
     dbqcount = session.query(CHAT).filter_by(ch_id=chat.id).count()
-    if dbqcount!=1: # cannot call .count() directly, considered as a transaction?
+    if dbqcount!=1:
         try:
             ch_name = getChatname(chat)
             with Session.begin() as sess:
@@ -364,27 +357,32 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
         # [x] edited message has same id, which should be updated in db
         with Session.begin() as sess:
             # check if new message is an edited message
-            MESSAGE2 = orm.aliased(MESSAGE)
-            dbq = msgmapjoin(sess, MESSAGE2)
-            dbmsgmap = dbq.filter(MESSAGE2.ch_id==chat.id).\
-                filter(MESSAGE2.msg_id==message.message_id).\
-                first()
-            if dbmsgmap: # edited message
-                dbmstmsg, dbslvmsg = dbmsgmap
-                # save in bucket, delete map in DB, delete message in DB
-                # (ondelete=cascade not work due to same trasaction, manually delete all)
-                dbbucketmsg = OLD_MESSAGE_BUCKET(
-                    ch_id=dbslvmsg.ch_id,
-                    msg_id=dbslvmsg.msg_id,
-                    content=dbslvmsg.content,
-                    compressed=dbslvmsg.compressed,
-                    timestamp=dbslvmsg.timestamp
-                )
-                sess.add(dbbucketmsg)
-                sess.delete(dbslvmsg)
-                sess.delete(dbmstmsg)
-            # insert message into db
-            msgsave(sess, chat.id, message)
+            dbmsg = sess.query(MESSAGE).\
+                filter_by(ch_id=chat.id).\
+                filter_by(msg_id=message.message_id).first()
+            if dbmsg: # message is an edited one
+                # check map record, if exists then remove it
+                MESSAGE2 = orm.aliased(MESSAGE)
+                dbq = msgmapjoin(sess, MESSAGE2)
+                dbmsgmap = dbq.filter(MESSAGE2.ch_id==chat.id).\
+                    filter(MESSAGE2.msg_id==message.message_id).\
+                    first()
+                if dbmsgmap: # edited message has been forwarded
+                    dbmastermsg, dbslavemsg = dbmsgmap # dbslavemsg==dbmsg
+                    # save in bucket, delete map in DB, delete message in DB
+                    # (ondelete=cascade not work due to same trasaction, manually delete all)
+                    sess.delete(dbmastermsg)
+                    sess.delete(dbslavemsg)
+                    # try to delete mstmsg
+                    ret = context.bot.delete_message(dbmastermsg.ch_id,dbmastermsg.msg_id)
+                    if not ret:
+                        botwarn('original message not deleted',context.bot)
+                else: # not in map, possibly in queue
+                    # remove it from MESSAGE, cause queued one to be removed
+                    msgbucketsave(sess, dbmsg)
+                    sess.delete(dbmsg)
+                # insert message into db
+                msgsave(sess, chat.id, message)
     except Exception as e:
         botwarn('{}'.format(e),context.bot)
         logger.warn('{} receiveHandler'.format(e))
@@ -440,14 +438,7 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
             ):
                 botwarn('edited message not deleted',context.bot)
             # save in OLD_MESSAGE_BUCKET
-            dbbucketmsg = OLD_MESSAGE_BUCKET(
-                ch_id=dbmsg.ch_id,
-                msg_id=dbmsg.msg_id,
-                content=dbmsg.content,
-                compressed=dbmsg.compressed,
-                timestamp=dbmsg.timestamp
-            )
-            sess.add(dbbucketmsg)
+            msgbucketsave(sess, dbmsg)
             sess.delete(dbmsg)
             sess.delete(dbslvmsg)
         # save message
@@ -702,6 +693,18 @@ def msgmapsave(sess, m_ch_id, m_msg_id, s_ch_id, s_msg_id, direction):
     )
     sess.add(dbmsgmap)
     return dbmsgmap
+
+# save old message buckekt
+def msgbucketsave(sess, dbmsg):
+    dbbucketmsg = OLD_MESSAGE_BUCKET(
+        ch_id=dbmsg.ch_id,
+        msg_id=dbmsg.msg_id,
+        content=dbmsg.content,
+        compressed=dbmsg.compressed,
+        timestamp=dbmsg.timestamp
+    )
+    sess.add(dbbucketmsg)
+    return dbbucketmsg
 
 # return chat type enum
 def chatype(chat:t.Chat):
