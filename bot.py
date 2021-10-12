@@ -59,33 +59,53 @@ db.initdb(dbconf)
 
 
 # register handlers in dispatcher
+
+# basic info handlers
 updater.dispatcher.add_handler(
     te.CommandHandler('start',startHandler)
 )
 updater.dispatcher.add_handler(
     te.CommandHandler('getme',userinfoHandler)
 )
+
+# switch handler
 updater.dispatcher.add_handler(
     te.MessageHandler(
         te.Filters.chat(botconfig['masterchatid']) & \
         te.Filters.user(botconfig['masterid']) & \
-        te.Filters.regex(r'^/s(w(itch){0,1}){0,1}\s*'),
+        te.Filters.regex(r'^/s(w(itch)?)?\s*(@[0-9a-zA-Z_]*[Bb][Oo][Tt])?\s*$'),
         switchHandler
     )
 )
+# delete handler
 updater.dispatcher.add_handler(
     te.MessageHandler(
         te.Filters.chat(botconfig['masterchatid']) & \
         te.Filters.user(botconfig['masterid']) & \
-        te.Filters.regex(r'^/d(e(lete){0,1}){0,1}\s*'),
+        te.Filters.regex(r'^/d(e(lete)?)?\s*(@[0-9a-zA-Z_]*[Bb][Oo][Tt])?\s*$'),
         deleteHandler
     )
 )
+# dice handler
+# slot basketball soccer football dart bowl
+updater.dispatcher.add_handler(
+    te.MessageHandler(
+        te.Filters.chat(botconfig['masterchatid']) & \
+        te.Filters.user(botconfig['masterid']) & \
+        te.Filters.regex(
+            r'^/(dice)|(slot(machine)?)|basketball)|(soccer)|'+
+            r'(football)|(dart(board)?)|(bowl(ing)?)$'
+        ),
+        diceMasterHandler
+    )
+)
+# switch callback handler
 updater.dispatcher.add_handler(
     te.CallbackQueryHandler(
         switchCallbackHandler
     )
 )
+# master chat handler
 updater.dispatcher.add_handler(
     te.MessageHandler(
         te.Filters.chat(botconfig['masterchatid']) & \
@@ -93,6 +113,7 @@ updater.dispatcher.add_handler(
         receiveMasterHandler
     )
 )
+# slave chat handler
 updater.dispatcher.add_handler(
     te.MessageHandler(
         (~te.Filters.chat(int(botconfig['masterchatid']))) & \
