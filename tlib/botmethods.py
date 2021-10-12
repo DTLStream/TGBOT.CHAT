@@ -104,33 +104,44 @@ def deleteHandler(update:t.Update, context:te.CallbackContext):
         # save msg
         msgbucketsave(sess, msg)
 
+        # IMPORTANT NOTICE: delete_message returns True on success, but raise error if failed
         # delete messages
         # command, can be deleted immediately without hesitation
-        ret = context.bot.delete_message(
-            chat_id=chat.id,
-            message_id=message.message_id
-        )
-        # if not ret: botwarn('/d command not deleted',context.bot)
+        try:
+            ret = context.bot.delete_message(
+                chat_id=chat.id,
+                message_id=message.message_id
+            )
+            # if not ret: botwarn('/d command not deleted',context.bot)
+        except Exception as e:
+            botwarn('{} (continue removal) deleteHandler'.format(e), context.bot)
+            logger.warn('{} (continue removal) deleteHandler'.format(e))
 
         # slave
-        ret = context.bot.delete_message(
-            chat_id=slvmsg.ch_id,
-            message_id=slvmsg.msg_id
-        )
-        # only slave message cannot be observed directly
-        # if slave message not deleted, then warn and rollback
-        if not ret:
-            botwarn('slave message not deleted, rollback',context.bot)
+        try:
+            ret = context.bot.delete_message(
+                chat_id=slvmsg.ch_id,
+                message_id=slvmsg.msg_id
+            )
+            # only slave message cannot be observed directly
+        except Exception as e:
+            # if slave message not deleted, then warn and rollback
+            botwarn('{} (slave message not removed, rollback) deleteHandler'.format(e), context.bot)
+            logger.warn('{} (slave message not removed, rollback) deleteHandler')
             sess.rollback()
             session.close() # close before return
             return
         
         # master
-        ret = context.bot.delete_message(
-            chat_id=msg.ch_id,
-            message_id=msg.msg_id
-        )
+        try:
+            context.bot.delete_message(
+                chat_id=msg.ch_id,
+                message_id=msg.msg_id
+            )
         # if not ret: botwarn('master message not deleted',context.bot)
+        except Exception as e:
+            botwarn('{} (force removal in db) deleteHandler'.format(e), context.bot)
+            logger.warn('{} (force removal in db) deleteHandler'.format(e))
 
         # remove msg,slvmsg in db, on delete cascade for MAP
         sess.delete(msg)
@@ -376,9 +387,13 @@ def receiveHandler(update: t.Update, context: te.CallbackContext):
                     sess.delete(dbmastermsg)
                     sess.delete(dbslavemsg)
                     # try to delete mstmsg
-                    ret = context.bot.delete_message(dbmastermsg.ch_id,dbmastermsg.msg_id)
-                    if not ret:
-                        botwarn('original message not deleted',context.bot)
+                    try:
+                        context.bot.delete_message(dbmastermsg.ch_id,dbmastermsg.msg_id)
+                    except Exception as e:
+                        botwarn('{} (original message not deleted) receiveHandler'.\
+                            format(e), context.bot)
+                        logger.warn('{} (original message not deleted) receiveHandler'.\
+                            format(e))
                 else: # not in map, possibly in queue
                     # remove it from MESSAGE, cause queued one to be removed
                     msgbucketsave(sess, dbmsg)
@@ -449,11 +464,15 @@ def receiveMasterHandler(update: t.Update, context: te.CallbackContext):
         if dbmsgtup: # edited
             dbmsg, dbslvmsg = dbmsgtup
             # delete original message first
-            if not context.bot.delete_message(
-                chat_id=dbslvmsg.ch_id,
-                message_id=dbslvmsg.msg_id
-            ):
-                botwarn('edited message not deleted',context.bot)
+            try:
+                context.bot.delete_message(
+                    chat_id=dbslvmsg.ch_id,
+                    message_id=dbslvmsg.msg_id
+                )
+            except Exception as e:
+                botwarn('{} (edited message not deleted) receiveMasterHandler'.format(e), context.bot)
+                logger.warn('{} (edited message not deleted) receiveMasterHandler'.format(e))
+                # continue
             # save in OLD_MESSAGE_BUCKET
             msgbucketsave(sess, dbmsg)
             sess.delete(dbmsg)
@@ -558,18 +577,26 @@ def diceMasterHandler(update: t.Update, context: te.CallbackContext):
     # send to slavechat, forward back, delete original message
     try:
         slavemsg = context.bot.send_dice(
-            currentchat,
-            dicetype,
+            chat_id=currentchat,
+            emoji=dicetype,
             reply_to_message_id=reply_msg_id,
             allow_sending_without_reply=True # not strict
         )
         # not hint reply...
         mastermsg = slavemsg.forward(botconfig['masterchatid'])
-        # delete original message, not check if deletion was sucessful
-        context.bot.delete_message(
-            chat_id=chat.id, # botconfig['masterchatid']
-            message_id=message.message_id
-        )
+        # from API:
+        # A dice message in a private chat can only be deleted if it was sent more than 24 hours ago.
+        # delete original message if it's a command message, not check if deletion was sucessful
+        if not message.dice:
+            try:
+                context.bot.delete_message(
+                    chat_id=chat.id, # botconfig['masterchatid']
+                    message_id=message.message_id
+                )
+            except Exception as e:
+                botwarn('{} diceMasterHandler'.format(e),context.bot)
+                logger.warn('{} diceMasterHandler'.format(e))
+                # continue
     except Exception as e:
         botwarn('{} diceMasterHandler'.format(e), context.bot)
         logger.warn('{} diceMasterHandler'.format(e))
@@ -841,7 +868,7 @@ def parseDiceType(text):
     # 🎲🎯🎳-6)(🏀⚽-5)(🎰-64
     if not text: return '🎲' # dice
     if '/slot' in text: return '🎰' # slotmachine
-    if '/basketball' in text: return '🏀' # basketball
+    if '/basket' in text: return '🏀' # basketball
     if '/soccer' in text or '/football' in text: return '⚽️' # soccer
     if '/dart' in text: return '🎯' # dart,dartboard
     if '/bowl' in text: return '🎳' # bowling
